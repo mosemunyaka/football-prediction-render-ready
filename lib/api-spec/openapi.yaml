@@ -1,0 +1,1228 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: matches
+    description: Football fixture search
+  - name: predictions
+    description: Statistical football match predictions
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /matches:
+    get:
+      operationId: findMatches
+      tags: [matches]
+      summary: Find Football-Data.org fixtures
+      description: >
+        Finds fixtures using server-side Football-Data.org access. The API key
+        is never exposed to callers. By default, searches from today through
+        the next two weeks. Supply dateFrom and dateTo together to choose a
+        different date range.
+      parameters:
+        - name: competition
+          in: query
+          required: false
+          description: Football-Data.org competition code, such as PL or CL
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 20
+        - name: dateFrom
+          in: query
+          required: false
+          description: Earliest fixture date in YYYY-MM-DD format
+          schema:
+            type: string
+            format: date
+        - name: dateTo
+          in: query
+          required: false
+          description: Latest fixture date in YYYY-MM-DD format
+          schema:
+            type: string
+            format: date
+        - name: status
+          in: query
+          required: false
+          description: Fixture status filter
+          schema:
+            type: string
+            enum:
+              - SCHEDULED
+              - TIMED
+              - LIVE
+              - IN_PLAY
+              - PAUSED
+              - FINISHED
+              - POSTPONED
+              - SUSPENDED
+              - CANCELLED
+              - AWARDED
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of fixtures returned after provider filtering
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        "200":
+          description: Matching fixtures
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchFinderResponse"
+        "400":
+          description: Invalid match search filters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Football-Data.org upstream failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Football-Data.org API key is missing or unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /predictions:
+    get:
+      operationId: listPredictionHistory
+      tags: [predictions]
+      summary: List saved prediction history
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: competitionCode
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 20
+        - name: market
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 80
+      responses:
+        "200":
+          description: Saved predictions and their current evaluation status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PredictionHistoryResponse"
+        "400":
+          description: Invalid history filters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: createPrediction
+      tags: [predictions]
+      summary: Calculate a football match prediction from team statistics
+      description: >
+        Calculates statistical estimates from caller-supplied team statistics.
+        Predictions are not guarantees.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PredictionRequest"
+      responses:
+        "200":
+          description: Calculated prediction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchPrediction"
+        "400":
+          description: Invalid or incomplete team statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Prediction calculation failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /predictions/match/{matchId}:
+    get:
+      operationId: getMatchPrediction
+      tags: [predictions]
+      summary: Calculate a prediction for a Football-Data.org fixture
+      description: >
+        Retrieves a fixture and historical team data from Football-Data.org,
+        calculates team statistics, and returns a Poisson-based prediction.
+      parameters:
+        - name: matchId
+          in: path
+          required: true
+          description: Positive Football-Data.org match ID
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Fixture and calculated prediction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchPredictionResponse"
+        "400":
+          description: Invalid match ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Fixture not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Football-Data.org upstream failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Football-Data.org API key is missing or unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [predictions]
+      summary: Get prediction and jackpot performance overview
+      responses:
+        "200":
+          description: Aggregated performance and recent activity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /results/sync:
+    post:
+      operationId: syncFixtureResults
+      tags: [predictions]
+      summary: Fetch completed fixture results for saved prediction tracking
+      description: >
+        Synchronizes completed Football-Data.org fixtures in a bounded date
+        range. Existing prediction snapshots are not changed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResultSyncInput"
+      responses:
+        "200":
+          description: Result synchronization counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResultSyncResponse"
+        "400":
+          description: Invalid date range or competition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Football-Data.org result retrieval failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /jackpots:
+    get:
+      operationId: listJackpotRuns
+      tags: [predictions]
+      summary: List saved 17-fixture jackpot analyses
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+      responses:
+        "200":
+          description: Recent jackpot analyses and their result status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JackpotRunList"
+    post:
+      operationId: createJackpotAnalysis
+      tags: [predictions]
+      summary: Analyze exactly 17 selected fixtures
+      description: >
+        Saves one immutable prediction snapshot per fixture and offers safest
+        and higher-risk selection options. These are estimates, not guarantees.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JackpotAnalysisInput"
+      responses:
+        "201":
+          description: Saved jackpot analysis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JackpotRunDetail"
+        "400":
+          description: Exactly 17 valid fixture IDs are required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: One or more fixture predictions could not be calculated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /jackpots/{runId}:
+    get:
+      operationId: getJackpotRun
+      tags: [predictions]
+      summary: Get one saved jackpot analysis
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Jackpot analysis with all 17 fixture selections
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JackpotRunDetail"
+        "404":
+          description: Jackpot analysis not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  schemas:
+    ResultSyncInput:
+      type: object
+      additionalProperties: false
+      properties:
+        dateFrom:
+          type: string
+          format: date
+        dateTo:
+          type: string
+          format: date
+        competitionCode:
+          type: string
+          minLength: 2
+          maxLength: 20
+      required:
+        - dateFrom
+        - dateTo
+    ResultSyncResponse:
+      type: object
+      properties:
+        fixturesFetched:
+          type: integer
+          minimum: 0
+        fixturesUpdated:
+          type: integer
+          minimum: 0
+        predictionsNowScored:
+          type: integer
+          minimum: 0
+        lastSyncedAt:
+          type: string
+          format: date-time
+      required:
+        - fixturesFetched
+        - fixturesUpdated
+        - predictionsNowScored
+        - lastSyncedAt
+    TrackedFixture:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        providerMatchId:
+          type: ["integer", "null"]
+          format: int64
+        competitionCode:
+          type: ["string", "null"]
+        competitionName:
+          type: ["string", "null"]
+        competitionType:
+          type: ["string", "null"]
+        homeTeamId:
+          type: ["integer", "null"]
+          format: int64
+        homeTeamName:
+          type: string
+        awayTeamId:
+          type: ["integer", "null"]
+          format: int64
+        awayTeamName:
+          type: string
+        kickoffAt:
+          type: ["string", "null"]
+          format: date-time
+        status:
+          type: string
+        finalHomeGoals:
+          type: ["integer", "null"]
+        finalAwayGoals:
+          type: ["integer", "null"]
+      required:
+        - id
+        - providerMatchId
+        - competitionCode
+        - competitionName
+        - competitionType
+        - homeTeamId
+        - homeTeamName
+        - awayTeamId
+        - awayTeamName
+        - kickoffAt
+        - status
+        - finalHomeGoals
+        - finalAwayGoals
+    PredictionSelectionEvaluation:
+      type: object
+      properties:
+        market:
+          type: string
+        selection:
+          type: string
+        probability:
+          type: number
+          minimum: 0
+          maximum: 100
+        actual:
+          type: ["boolean", "null"]
+      required:
+        - market
+        - selection
+        - probability
+        - actual
+    PredictionHistoryItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        generatedAt:
+          type: string
+          format: date-time
+        modelVersion:
+          type: string
+        source:
+          type: string
+          enum: [fixture, manual, jackpot]
+        fixture:
+          $ref: "#/components/schemas/TrackedFixture"
+        selections:
+          type: array
+          items:
+            $ref: "#/components/schemas/PredictionSelectionEvaluation"
+        evaluationStatus:
+          type: string
+          enum: [pending, evaluated, ineligible]
+        evaluationNote:
+          type: ["string", "null"]
+        correctSelections:
+          type: integer
+          minimum: 0
+        evaluatedSelections:
+          type: integer
+          minimum: 0
+        brierScore:
+          type: ["number", "null"]
+        logLoss:
+          type: ["number", "null"]
+      required:
+        - id
+        - generatedAt
+        - modelVersion
+        - source
+        - fixture
+        - selections
+        - evaluationStatus
+        - evaluationNote
+        - correctSelections
+        - evaluatedSelections
+        - brierScore
+        - logLoss
+    PredictionHistoryResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PredictionHistoryItem"
+        total:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+        offset:
+          type: integer
+          minimum: 0
+      required:
+        - items
+        - total
+        - limit
+        - offset
+    PerformanceMetric:
+      type: object
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        totalPredictions:
+          type: integer
+          minimum: 0
+        evaluatedPredictions:
+          type: integer
+          minimum: 0
+        correctPredictions:
+          type: integer
+          minimum: 0
+        accuracyPercent:
+          type: ["number", "null"]
+        brierScore:
+          type: ["number", "null"]
+        logLoss:
+          type: ["number", "null"]
+      required:
+        - key
+        - label
+        - totalPredictions
+        - evaluatedPredictions
+        - correctPredictions
+        - accuracyPercent
+        - brierScore
+        - logLoss
+    JackpotRiskProfile:
+      type: string
+      enum: [safe, higher-risk]
+    JackpotSelection:
+      type: string
+      enum: [HOME, DRAW, AWAY]
+    JackpotRunSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+        riskProfile:
+          $ref: "#/components/schemas/JackpotRiskProfile"
+        fixtureCount:
+          type: integer
+          enum: [17]
+        completedFixtures:
+          type: integer
+          minimum: 0
+          maximum: 17
+        correctSelections:
+          type: integer
+          minimum: 0
+          maximum: 17
+        perfect:
+          type: ["boolean", "null"]
+      required:
+        - id
+        - createdAt
+        - riskProfile
+        - fixtureCount
+        - completedFixtures
+        - correctSelections
+        - perfect
+    JackpotFixtureAnalysis:
+      type: object
+      properties:
+        position:
+          type: integer
+          minimum: 1
+          maximum: 17
+        fixture:
+          $ref: "#/components/schemas/TrackedFixture"
+        homeWinProbability:
+          type: number
+          minimum: 0
+          maximum: 100
+        drawProbability:
+          type: number
+          minimum: 0
+          maximum: 100
+        awayWinProbability:
+          type: number
+          minimum: 0
+          maximum: 100
+        safestSelection:
+          $ref: "#/components/schemas/JackpotSelection"
+        higherRiskAlternative:
+          $ref: "#/components/schemas/JackpotSelection"
+        selectedSelection:
+          $ref: "#/components/schemas/JackpotSelection"
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 100
+        difficultyScore:
+          type: number
+          minimum: 0
+          maximum: 100
+        upsetRiskScore:
+          type: number
+          minimum: 0
+          maximum: 100
+        upsetRisk:
+          type: string
+          enum: [low, medium, high]
+        headToHeadMatchCount:
+          type: integer
+          minimum: 0
+        headToHeadUsed:
+          type: boolean
+      required:
+        - position
+        - fixture
+        - homeWinProbability
+        - drawProbability
+        - awayWinProbability
+        - safestSelection
+        - higherRiskAlternative
+        - selectedSelection
+        - confidence
+        - difficultyScore
+        - upsetRiskScore
+        - upsetRisk
+        - headToHeadMatchCount
+        - headToHeadUsed
+    JackpotRunDetail:
+      allOf:
+        - $ref: "#/components/schemas/JackpotRunSummary"
+        - type: object
+          properties:
+            entries:
+              type: array
+              minItems: 17
+              maxItems: 17
+              items:
+                $ref: "#/components/schemas/JackpotFixtureAnalysis"
+            disclaimer:
+              type: string
+          required:
+            - entries
+            - disclaimer
+    JackpotRunList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/JackpotRunSummary"
+        total:
+          type: integer
+          minimum: 0
+      required:
+        - items
+        - total
+    JackpotAnalysisInput:
+      type: object
+      additionalProperties: false
+      properties:
+        matchIds:
+          type: array
+          minItems: 17
+          maxItems: 17
+          uniqueItems: true
+          items:
+            type: integer
+            format: int64
+            minimum: 1
+        riskProfile:
+          $ref: "#/components/schemas/JackpotRiskProfile"
+      required:
+        - matchIds
+    DashboardSummary:
+      type: object
+      properties:
+        totalPredictions:
+          type: integer
+          minimum: 0
+        evaluatedPredictions:
+          type: integer
+          minimum: 0
+        correctPredictions:
+          type: integer
+          minimum: 0
+        accuracyPercent:
+          type: ["number", "null"]
+        brierScore:
+          type: ["number", "null"]
+        logLoss:
+          type: ["number", "null"]
+        byCompetition:
+          type: array
+          items:
+            $ref: "#/components/schemas/PerformanceMetric"
+        byLeague:
+          type: array
+          items:
+            $ref: "#/components/schemas/PerformanceMetric"
+        byMarket:
+          type: array
+          items:
+            $ref: "#/components/schemas/PerformanceMetric"
+        recentPredictions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PredictionHistoryItem"
+        jackpotRunCount:
+          type: integer
+          minimum: 0
+        settledJackpotRuns:
+          type: integer
+          minimum: 0
+        perfectJackpotRuns:
+          type: integer
+          minimum: 0
+        recentJackpotRuns:
+          type: array
+          items:
+            $ref: "#/components/schemas/JackpotRunSummary"
+        disclaimer:
+          type: string
+      required:
+        - totalPredictions
+        - evaluatedPredictions
+        - correctPredictions
+        - accuracyPercent
+        - brierScore
+        - logLoss
+        - byCompetition
+        - byLeague
+        - byMarket
+        - recentPredictions
+        - jackpotRunCount
+        - settledJackpotRuns
+        - perfectJackpotRuns
+        - recentJackpotRuns
+        - disclaimer
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    TeamFormResult:
+      type: object
+      properties:
+        matchId:
+          type: integer
+          format: int64
+          minimum: 1
+        date:
+          type: string
+          format: date-time
+        opponentId:
+          type: integer
+          format: int64
+          minimum: 1
+        opponentName:
+          type: string
+          minLength: 1
+        venue:
+          type: string
+          enum: [home, away]
+        goalsFor:
+          type: number
+          minimum: 0
+        goalsAgainst:
+          type: number
+          minimum: 0
+        result:
+          type: string
+          enum: [W, D, L]
+      required:
+        - matchId
+        - date
+        - opponentId
+        - opponentName
+        - venue
+        - goalsFor
+        - goalsAgainst
+        - result
+    TeamForm:
+      type: object
+      properties:
+        last5:
+          type: array
+          maxItems: 5
+          items:
+            $ref: "#/components/schemas/TeamFormResult"
+        last10:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/TeamFormResult"
+        currentFormScore:
+          type: number
+          minimum: 0
+          maximum: 100
+      required:
+        - last5
+        - last10
+        - currentFormScore
+    TeamStats:
+      type: object
+      properties:
+        teamId:
+          type: integer
+          format: int64
+          minimum: 1
+        teamName:
+          type: string
+          minLength: 1
+        leaguePosition:
+          type: integer
+          minimum: 1
+        form:
+          $ref: "#/components/schemas/TeamForm"
+        wins:
+          type: number
+          minimum: 0
+        draws:
+          type: number
+          minimum: 0
+        losses:
+          type: number
+          minimum: 0
+        goalsScored:
+          type: number
+          minimum: 0
+        goalsConceded:
+          type: number
+          minimum: 0
+        goalsPerMatch:
+          type: number
+          minimum: 0
+        goalsConcededPerMatch:
+          type: number
+          minimum: 0
+        homeWins:
+          type: number
+          minimum: 0
+        homeDraws:
+          type: number
+          minimum: 0
+        homeLosses:
+          type: number
+          minimum: 0
+        homeGoalsScored:
+          type: number
+          minimum: 0
+        homeGoalsConceded:
+          type: number
+          minimum: 0
+        awayWins:
+          type: number
+          minimum: 0
+        awayDraws:
+          type: number
+          minimum: 0
+        awayLosses:
+          type: number
+          minimum: 0
+        awayGoalsScored:
+          type: number
+          minimum: 0
+        awayGoalsConceded:
+          type: number
+          minimum: 0
+        currentFormScore:
+          type: number
+          minimum: 0
+          maximum: 100
+        matchesAnalyzed:
+          type: integer
+          minimum: 0
+      required:
+        - teamName
+        - form
+        - wins
+        - draws
+        - losses
+        - goalsScored
+        - goalsConceded
+        - goalsPerMatch
+        - goalsConcededPerMatch
+        - homeWins
+        - homeDraws
+        - homeLosses
+        - homeGoalsScored
+        - homeGoalsConceded
+        - awayWins
+        - awayDraws
+        - awayLosses
+        - awayGoalsScored
+        - awayGoalsConceded
+        - currentFormScore
+        - matchesAnalyzed
+    PredictionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        homeTeam:
+          $ref: "#/components/schemas/TeamStats"
+        awayTeam:
+          $ref: "#/components/schemas/TeamStats"
+      required:
+        - homeTeam
+        - awayTeam
+    PredictionFactor:
+      type: object
+      properties:
+        key:
+          type: string
+          enum:
+            - recentForm
+            - attackingStrength
+            - defensiveStrength
+            - homeAdvantage
+            - venuePerformance
+            - leaguePosition
+        label:
+          type: string
+        weight:
+          type: number
+          minimum: 0
+          maximum: 100
+        value:
+          type: number
+          minimum: 0
+          maximum: 100
+        contribution:
+          type: number
+        description:
+          type: string
+      required:
+        - key
+        - label
+        - weight
+        - value
+        - contribution
+        - description
+    PredictionMarket:
+      type: object
+      properties:
+        market:
+          type: string
+        selection:
+          type: string
+        probability:
+          type: number
+          minimum: 0
+          maximum: 100
+      required:
+        - market
+        - selection
+        - probability
+    MatchPrediction:
+      type: object
+      properties:
+        homeWin:
+          type: number
+          minimum: 0
+          maximum: 100
+        draw:
+          type: number
+          minimum: 0
+          maximum: 100
+        awayWin:
+          type: number
+          minimum: 0
+          maximum: 100
+        over1_5:
+          type: number
+          minimum: 0
+          maximum: 100
+        over2_5:
+          type: number
+          minimum: 0
+          maximum: 100
+        under2_5:
+          type: number
+          minimum: 0
+          maximum: 100
+        bttsYes:
+          type: number
+          minimum: 0
+          maximum: 100
+        bttsNo:
+          type: number
+          minimum: 0
+          maximum: 100
+        homeCleanSheet:
+          type: number
+          minimum: 0
+          maximum: 100
+        awayCleanSheet:
+          type: number
+          minimum: 0
+          maximum: 100
+        homeExpectedGoals:
+          type: number
+          minimum: 0
+        awayExpectedGoals:
+          type: number
+          minimum: 0
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 100
+        methodology:
+          type: string
+        factors:
+          type: array
+          items:
+            $ref: "#/components/schemas/PredictionFactor"
+        markets:
+          type: array
+          items:
+            $ref: "#/components/schemas/PredictionMarket"
+        limitations:
+          type: array
+          items:
+            type: string
+      required:
+        - homeWin
+        - draw
+        - awayWin
+        - over1_5
+        - over2_5
+        - under2_5
+        - bttsYes
+        - bttsNo
+        - homeCleanSheet
+        - awayCleanSheet
+        - homeExpectedGoals
+        - awayExpectedGoals
+        - confidence
+        - methodology
+        - factors
+        - markets
+        - limitations
+    FootballTeam:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        shortName:
+          type: string
+        tla:
+          type: string
+        crest:
+          type: string
+      required:
+        - id
+        - name
+    MatchSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        utcDate:
+          type: string
+          format: date-time
+        status:
+          type: string
+        competition:
+          type: object
+          additionalProperties: true
+        homeTeam:
+          $ref: "#/components/schemas/FootballTeam"
+        awayTeam:
+          $ref: "#/components/schemas/FootballTeam"
+        score:
+          $ref: "#/components/schemas/MatchScoreSummary"
+      required:
+        - id
+        - utcDate
+        - status
+        - homeTeam
+        - awayTeam
+    MatchScoreSummary:
+      type: object
+      properties:
+        winner:
+          type: string
+          nullable: true
+          enum: [HOME_TEAM, AWAY_TEAM, DRAW]
+        fullTime:
+          type: object
+          properties:
+            home:
+              type: number
+              nullable: true
+            away:
+              type: number
+              nullable: true
+          required:
+            - home
+            - away
+      required:
+        - fullTime
+    MatchFinderResponse:
+      type: object
+      properties:
+        matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/MatchSummary"
+        count:
+          type: integer
+          minimum: 0
+      required:
+        - matches
+        - count
+    MatchPredictionResponse:
+      type: object
+      properties:
+        match:
+          $ref: "#/components/schemas/MatchSummary"
+        homeTeamStats:
+          $ref: "#/components/schemas/TeamStats"
+        awayTeamStats:
+          $ref: "#/components/schemas/TeamStats"
+        headToHead:
+          $ref: "#/components/schemas/HeadToHeadSummary"
+        prediction:
+          $ref: "#/components/schemas/MatchPrediction"
+      required:
+        - match
+        - homeTeamStats
+        - awayTeamStats
+        - headToHead
+        - prediction
+    HeadToHeadSummary:
+      type: object
+      properties:
+        availableMatches:
+          type: integer
+          minimum: 0
+        used:
+          type: boolean
+        note:
+          type: string
+        homeWins:
+          type: integer
+          minimum: 0
+        draws:
+          type: integer
+          minimum: 0
+        awayWins:
+          type: integer
+          minimum: 0
+        homeGoalsPerMatch:
+          type: ["number", "null"]
+        awayGoalsPerMatch:
+          type: ["number", "null"]
+      required:
+        - availableMatches
+        - used
+        - note
+        - homeWins
+        - draws
+        - awayWins
+        - homeGoalsPerMatch
+        - awayGoalsPerMatch
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required:
+        - error
+
